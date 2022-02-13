@@ -45,6 +45,7 @@
     </Reference>
     <Reference Include="KeePass, Version=2.50.0.21065, Culture=neutral, processorArchitecture=MSIL">
       <HintPath>packages\KeePass.2.50.0.21065\lib\net462\KeePass.exe</HintPath>
+      <Private>False</Private>
     </Reference>
     <Reference Include="Mono.Reflection, Version=1.1.0.0, Culture=neutral, PublicKeyToken=0738eb9f132ed756, processorArchitecture=MSIL">
       <HintPath>packages\Mono.Reflection.Core.1.1.1\lib\net45\Mono.Reflection.dll</HintPath>
