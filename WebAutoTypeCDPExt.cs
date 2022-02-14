@@ -1,6 +1,5 @@
 ﻿using ChromeAutomation;
 using HarmonyLib;
-using IWshRuntimeLibrary;
 using KeePass;
 using KeePass.Forms;
 using KeePass.Plugins;
@@ -23,7 +22,7 @@ using System.Windows.Forms;
 
 namespace WebAutoTypeCDP
 {
-    [HarmonyPatch]
+	[HarmonyPatch]
 	class AutoTypePatch
 	{
 		[HarmonyPrefix]
@@ -33,6 +32,33 @@ namespace WebAutoTypeCDP
 		{
 			return !WebAutoTypeCDPExt.PerformAutoType(ilIcons);
 		}
+	}
+
+	[ComImport, TypeLibType((short)0x1040), Guid("F935DC23-1CF0-11D0-ADB9-00C04FD58A0B")]
+	interface IWshShortcut
+	{
+		[DispId(0)]
+		string FullName { [return: MarshalAs(UnmanagedType.BStr)] [DispId(0)] get; }
+		[DispId(0x3e8)]
+		string Arguments { [return: MarshalAs(UnmanagedType.BStr)] [DispId(0x3e8)] get; [param: In, MarshalAs(UnmanagedType.BStr)] [DispId(0x3e8)] set; }
+		[DispId(0x3e9)]
+		string Description { [return: MarshalAs(UnmanagedType.BStr)] [DispId(0x3e9)] get; [param: In, MarshalAs(UnmanagedType.BStr)] [DispId(0x3e9)] set; }
+		[DispId(0x3ea)]
+		string Hotkey { [return: MarshalAs(UnmanagedType.BStr)] [DispId(0x3ea)] get; [param: In, MarshalAs(UnmanagedType.BStr)] [DispId(0x3ea)] set; }
+		[DispId(0x3eb)]
+		string IconLocation { [return: MarshalAs(UnmanagedType.BStr)] [DispId(0x3eb)] get; [param: In, MarshalAs(UnmanagedType.BStr)] [DispId(0x3eb)] set; }
+		[DispId(0x3ec)]
+		string RelativePath { [param: In, MarshalAs(UnmanagedType.BStr)] [DispId(0x3ec)] set; }
+		[DispId(0x3ed)]
+		string TargetPath { [return: MarshalAs(UnmanagedType.BStr)] [DispId(0x3ed)] get; [param: In, MarshalAs(UnmanagedType.BStr)] [DispId(0x3ed)] set; }
+		[DispId(0x3ee)]
+		int WindowStyle { [DispId(0x3ee)] get; [param: In] [DispId(0x3ee)] set; }
+		[DispId(0x3ef)]
+		string WorkingDirectory { [return: MarshalAs(UnmanagedType.BStr)] [DispId(0x3ef)] get; [param: In, MarshalAs(UnmanagedType.BStr)] [DispId(0x3ef)] set; }
+		[TypeLibFunc((short)0x40), DispId(0x7d0)]
+		void Load([In, MarshalAs(UnmanagedType.BStr)] string PathLink);
+		[DispId(0x7d1)]
+		void Save();
 	}
 
 	public sealed class WebAutoTypeCDPExt : Plugin
@@ -47,6 +73,9 @@ namespace WebAutoTypeCDP
 
 		private const string setupMenuText = "WebAutoTypeCDP Setup";
 		private const string setupCommandLineOption = "setup-webautotypecdp";
+
+		private static Type type = Type.GetTypeFromProgID("WScript.Shell");
+		private static object shell = Activator.CreateInstance(type);
 
 		private enum RemoteDebuggingPort
         {
@@ -94,7 +123,7 @@ namespace WebAutoTypeCDP
 				Environment.Exit(0);
             }
 
-			var harmony = new Harmony(nameof(WebAutoTypeCDPExt));
+			var harmony = new Harmony("WebAutoTypeCDPExt");
             harmony.PatchAll();
 
 			SprEngine.FilterPlaceholderHints.Add(CheckPasswordBoxPlaceholder);
@@ -117,28 +146,25 @@ namespace WebAutoTypeCDP
 
 		private void SetupBrowserShortcuts(string linkFileName, RemoteDebuggingPort remoteDebuggingPort)
         {
-			var shell = new WshShell();
-			var startMenuLinkPath = $@"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\{linkFileName}.lnk";
-			var taskBarLinkPath = $@"{Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData)}\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\{linkFileName}.lnk";
+            var startMenuLinkPath = string.Format(@"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\{0}.lnk", linkFileName);
+            var taskBarLinkPath = string.Format(@"{0}\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\{1}.lnk", Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), linkFileName);
 
-			if (System.IO.File.Exists(startMenuLinkPath))
-			{
-				var link = (IWshShortcut)shell.CreateShortcut(startMenuLinkPath);
-				link.Arguments = Regex.Replace(link.Arguments, @"\s*[^\s]*\-\-remote\-debugging\-port=[^\s]*\s*", " ");
-				link.Arguments = $"--remote-debugging-port=\"{remoteDebuggingPort:D}\" {link.Arguments}";
-				link.Arguments = link.Arguments.Trim();
-				link.Save();
-			}
+            if (System.IO.File.Exists(startMenuLinkPath))
+            {
+                var link = (IWshShortcut)type.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod, null, shell, new object[] { startMenuLinkPath });
+                link.Arguments = Regex.Replace(link.Arguments, @"\s*[^\s]*\-\-remote\-debugging\-port=[^\s]*\s*", " ");
+                link.Arguments = string.Format("--remote-debugging-port=\"{0:D}\" {1}", remoteDebuggingPort, link.Arguments.Trim());
+                link.Save();
+            }
 
-			if (System.IO.File.Exists(taskBarLinkPath))
-			{
-				var link = (IWshShortcut)shell.CreateShortcut(taskBarLinkPath);
+            if (System.IO.File.Exists(taskBarLinkPath))
+            {
+				var link = (IWshShortcut)type.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod, null, shell, new object[] { taskBarLinkPath });
 				link.Arguments = Regex.Replace(link.Arguments, @"\s*[^\s]*\-\-remote\-debugging\-port=[^\s]*\s*", " ");
-				link.Arguments = $"--remote-debugging-port=\"{remoteDebuggingPort:D}\" {link.Arguments}";
-				link.Arguments = link.Arguments.Trim();
-				link.Save();
-			}
-		}
+                link.Arguments = string.Format("--remote-debugging-port=\"{0:D}\" {1}", remoteDebuggingPort, link.Arguments.Trim());
+                link.Save();
+            }
+        }
 
 		public override ToolStripMenuItem GetMenuItem(PluginMenuType t)
 		{
@@ -168,7 +194,7 @@ namespace WebAutoTypeCDP
 				var process = Process.Start(new ProcessStartInfo
 				{
 					FileName = Assembly.GetEntryAssembly().CodeBase,
-					Arguments = $"-{setupCommandLineOption}",
+					Arguments = string.Format("-{0}", setupCommandLineOption),
 					Verb = "runas"
 				});
 				process.WaitForExit();
@@ -178,6 +204,8 @@ namespace WebAutoTypeCDP
 					Program.Config.Integration.LimitToSingleInstance = limitToSingleInstance;
 					Program.MainForm.SaveConfig();
 				}
+
+				MessageBox.Show("Setup finished successfully.", setupMenuText, MessageBoxButtons.OK, MessageBoxIcon.Information);
 			}
 		}
 
@@ -191,7 +219,7 @@ namespace WebAutoTypeCDP
 					{
 						try
 						{
-							var chrome = new Chrome($"http://127.0.0.1:{remoteDebuggingPort:D}");
+							var chrome = new Chrome(string.Format("http://127.0.0.1:{0:D}", remoteDebuggingPort));
 							IEnumerable<RemoteSessionsResponse> sessions = chrome.GetAvailableSessions();
 							sessions = sessions.Where(s => s.type == "page");
 
