@@ -8,7 +8,6 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Net.WebSockets;
 using System.Threading;
-using System.Web;
 using WebSocket4Net;
 
 namespace ChromeAutomation
@@ -132,7 +131,6 @@ namespace ChromeAutomation
         {
 
             T obj =  Activator.CreateInstance<T>();
-            json = HttpUtility.HtmlDecode(json);
             using (MemoryStream ms = new MemoryStream(Encoding.Unicode.GetBytes(json)))
             {
                 DataContractJsonSerializer serializer = new DataContractJsonSerializer(obj.GetType());

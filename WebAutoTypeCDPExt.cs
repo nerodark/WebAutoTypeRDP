@@ -18,6 +18,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Web;
 using System.Windows.Forms;
 
 namespace WebAutoTypeCDP
@@ -263,7 +264,7 @@ namespace WebAutoTypeCDP
 			{
 				chrome.SetActiveSession(session.webSocketDebuggerUrl);
 
-				if (activeWindowTitle.Contains(session.title) && browserUrlValidator(chrome))
+				if (activeWindowTitle.Contains(HttpUtility.HtmlDecode(session.title)) && browserUrlValidator(chrome))
 				{
 					var entries = FindMatchingEntries(session.url);
 
