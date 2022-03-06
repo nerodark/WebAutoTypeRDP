@@ -5,8 +5,6 @@ using System.Linq;
 using System.Net;
 using System.Runtime.Serialization.Json;
 using System.Text;
-using System.Threading.Tasks;
-using System.Net.WebSockets;
 using System.Threading;
 using WebSocket4Net;
 
