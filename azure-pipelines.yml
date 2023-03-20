@@ -25,7 +25,7 @@ steps:
 
 - script: |
     pip install nuitka geckordp
-    python -m nuitka --assume-yes-for-downloads listtabs.py
+    python -m nuitka --assume-yes-for-downloads --onefile listtabs.py
   displayName: 'nuitka'
 
 - publish: $(System.DefaultWorkingDirectory)
