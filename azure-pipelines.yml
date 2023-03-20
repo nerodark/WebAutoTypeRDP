@@ -25,4 +25,5 @@ steps:
 
 - script: |
     pip install nuitka
+    python -m nuitka --assume-yes-for-downloads listtabs.py
   displayName: 'nuitka'
