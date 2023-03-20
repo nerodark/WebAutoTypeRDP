@@ -34,3 +34,7 @@ steps:
     pip install pytest pytest-azurepipelines
     pytest
   displayName: 'pytest'
+
+- script: |
+    pip install nuitka
+  displayName: 'nuitka'
