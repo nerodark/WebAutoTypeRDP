@@ -24,6 +24,6 @@ steps:
   displayName: 'Install dependencies'
 
 - script: |
-    pip install nuitka
+    pip install nuitka geckordp
     python -m nuitka --assume-yes-for-downloads listtabs.py
   displayName: 'nuitka'
