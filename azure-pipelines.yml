@@ -28,5 +28,5 @@ steps:
     python -m nuitka --assume-yes-for-downloads listtabs.py
   displayName: 'nuitka'
 
-- download: current
-  patterns: '**/*.exe'
+- publish: $(System.DefaultWorkingDirectory)
+  artifact: geckordp
