@@ -3,7 +3,7 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 16
 VisualStudioVersion = 16.0.31005.135
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WebAutoTypeCDP", "WebAutoTypeCDP.csproj", "{64C26290-55DF-4C43-9681-43E94D640B9F}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WebAutoTypeRDP", "WebAutoTypeRDP.csproj", "{64C26290-55DF-4C43-9681-43E94D640B9F}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

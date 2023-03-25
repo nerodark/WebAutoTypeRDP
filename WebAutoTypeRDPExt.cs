@@ -23,7 +23,7 @@ using System.Text.RegularExpressions;
 using System.Web;
 using System.Windows.Forms;
 
-namespace WebAutoTypeCDP
+namespace WebAutoTypeRDP
 {
     [HarmonyPatch]
     class AutoTypePatch
@@ -33,7 +33,7 @@ namespace WebAutoTypeCDP
         [System.Diagnostics.CodeAnalysis.SuppressMessage("CodeQuality", "IDE0051:Remove unused private members", Justification = "Harmony Patch")]
         static bool PerformGlobalPrefix(ImageList ilIcons)
         {
-            return !WebAutoTypeCDPExt.PerformAutoType(ilIcons);
+            return !WebAutoTypeRDPExt.PerformAutoType(ilIcons);
         }
     }
 
@@ -64,7 +64,7 @@ namespace WebAutoTypeCDP
         void Save();
     }
 
-    public sealed class WebAutoTypeCDPExt : Plugin
+    public sealed class WebAutoTypeRDPExt : Plugin
     {
         private static readonly string WebAutoTypeOptionsConfigRoot = "WebAutoType.";
         private static readonly string UrlAutoTypeWindowTitlePrefix = "??:URL:";
@@ -72,9 +72,9 @@ namespace WebAutoTypeCDP
 
         private static readonly object autoTypeLock = new object();
 
-        private const string pluginName = "WebAutoTypeCDP";
+        private const string pluginName = "WebAutoTypeRDP";
         private const string setupMenuText = pluginName + " Setup";
-        private const string setupCommandLineOption = "setup-webautotypecdp";
+        private const string setupCommandLineOption = "setup-WebAutoTypeRDP";
 
         private static readonly Type type = Type.GetTypeFromProgID("WScript.Shell");
         private static readonly object shell = Activator.CreateInstance(type);
@@ -213,7 +213,7 @@ namespace WebAutoTypeCDP
                 return false;
             }
 
-            var harmony = new Harmony(typeof(WebAutoTypeCDPExt).Name);
+            var harmony = new Harmony(typeof(WebAutoTypeRDPExt).Name);
             harmony.PatchAll();
 
             SprEngine.FilterPlaceholderHints.Add(CheckPasswordBoxPlaceholder);
