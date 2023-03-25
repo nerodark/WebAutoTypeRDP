@@ -338,7 +338,11 @@ namespace WebAutoTypeCDP
 
                     var appBrowser = appBrowsers.SingleOrDefault(a => a.ExecutablePath == executablePath);
 
-                    if (appBrowser == null) return false;
+                    if (appBrowser == null)
+                    {
+                        MessageBox.Show($"The active browser is not supported:\n\n{executablePath}", pluginName, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return false;
+                    }
 
                     var chrome = new Chrome(string.Format("http://127.0.0.1:{0:D}", appBrowser.DevToolsPort));
                     IEnumerable<RemoteSessionsResponse> sessions = chrome.GetAvailableSessions();

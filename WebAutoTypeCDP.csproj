@@ -45,15 +45,14 @@
     <StartupObject />
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="0Harmony, Version=2.2.0.0, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>packages\Lib.Harmony.2.2.0\lib\net472\0Harmony.dll</HintPath>
+    <Reference Include="0Harmony, Version=2.2.2.0, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>packages\Lib.Harmony.2.2.2\lib\net472\0Harmony.dll</HintPath>
     </Reference>
     <Reference Include="Costura, Version=5.7.0.0, Culture=neutral, processorArchitecture=MSIL">
       <HintPath>packages\Costura.Fody.5.7.0\lib\netstandard1.0\Costura.dll</HintPath>
     </Reference>
-    <Reference Include="KeePass, Version=2.50.0.21065, Culture=neutral, processorArchitecture=MSIL">
-      <HintPath>packages\KeePass.2.50.0.21065\lib\net462\KeePass.exe</HintPath>
-      <Private>False</Private>
+    <Reference Include="KeePass, Version=2.52.0.34133, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>packages\KeePass.2.52.0.34133\lib\net462\KeePass.exe</HintPath>
     </Reference>
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="Microsoft.WindowsAPICodePack, Version=1.1.4.0, Culture=neutral, PublicKeyToken=8985beaab7ea3f04, processorArchitecture=MSIL">
@@ -63,7 +62,10 @@
       <HintPath>packages\Microsoft-WindowsAPICodePack-Shell.1.1.4\lib\net472\Microsoft.WindowsAPICodePack.Shell.dll</HintPath>
     </Reference>
     <Reference Include="Newtonsoft.Json, Version=13.0.0.0, Culture=neutral, PublicKeyToken=30ad4fe6b2a6aeed, processorArchitecture=MSIL">
-      <HintPath>packages\Newtonsoft.Json.13.0.1\lib\net45\Newtonsoft.Json.dll</HintPath>
+      <HintPath>packages\Newtonsoft.Json.13.0.2\lib\net45\Newtonsoft.Json.dll</HintPath>
+    </Reference>
+    <Reference Include="PlgxTool, Version=0.1.2.41667, Culture=neutral, processorArchitecture=MSIL">
+      <HintPath>packages\PlgxTool.1.0.3\lib\net40\PlgxTool.exe</HintPath>
     </Reference>
     <Reference Include="SuperSocket.ClientEngine, Version=0.10.0.0, Culture=neutral, PublicKeyToken=ee9af13f57f00acc, processorArchitecture=MSIL">
       <HintPath>packages\SuperSocket.ClientEngine.Core.0.10.0\lib\net45\SuperSocket.ClientEngine.dll</HintPath>
@@ -98,16 +100,15 @@
     <PropertyGroup>
       <ErrorText>This project references NuGet package(s) that are missing on this computer. Use NuGet Package Restore to download them.  For more information, see http://go.microsoft.com/fwlink/?LinkID=322105. The missing file is {0}.</ErrorText>
     </PropertyGroup>
-    <Error Condition="!Exists('packages\PlgxTool.1.0.0\build\PlgxTool.targets')" Text="$([System.String]::Format('$(ErrorText)', 'packages\PlgxTool.1.0.0\build\PlgxTool.targets'))" />
     <Error Condition="!Exists('packages\Costura.Fody.5.7.0\build\Costura.Fody.props')" Text="$([System.String]::Format('$(ErrorText)', 'packages\Costura.Fody.5.7.0\build\Costura.Fody.props'))" />
     <Error Condition="!Exists('packages\Costura.Fody.5.7.0\build\Costura.Fody.targets')" Text="$([System.String]::Format('$(ErrorText)', 'packages\Costura.Fody.5.7.0\build\Costura.Fody.targets'))" />
-    <Error Condition="!Exists('packages\Fody.6.6.0\build\Fody.targets')" Text="$([System.String]::Format('$(ErrorText)', 'packages\Fody.6.6.0\build\Fody.targets'))" />
+    <Error Condition="!Exists('packages\Fody.6.6.4\build\Fody.targets')" Text="$([System.String]::Format('$(ErrorText)', 'packages\Fody.6.6.4\build\Fody.targets'))" />
+    <Error Condition="!Exists('packages\PlgxTool.1.0.3\build\PlgxTool.targets')" Text="$([System.String]::Format('$(ErrorText)', 'packages\PlgxTool.1.0.3\build\PlgxTool.targets'))" />
   </Target>
-  <Import Project="packages\PlgxTool.1.0.0\build\PlgxTool.targets" Condition="Exists('packages\PlgxTool.1.0.0\build\PlgxTool.targets')" />
   <Target Name="BeforeBuild">
   </Target>
   <Target Name="AfterBuild">
-    <Copy SourceFiles="$(ProjectDir)packages\KeePass.2.50.0.21065\lib\net462\KeePass.exe" DestinationFolder="$(TargetDir).." />
+    <Copy SourceFiles="$(ProjectDir)packages\KeePass.2.52.0.34133\lib\net462\KeePass.exe" DestinationFolder="$(TargetDir).." />
     <CallTarget Condition="'$(Configuration)' == 'Debug'" Targets="AfterBuildDebug" />
     <CallTarget Condition="'$(Configuration)' == 'Release'" Targets="AfterBuildRelease" />
   </Target>
@@ -118,5 +119,6 @@
     <Delete Files="$(TargetDir)WebAutoTypeCDP.dll" />
   </Target>
   <Import Project="packages\Costura.Fody.5.7.0\build\Costura.Fody.targets" Condition="Exists('packages\Costura.Fody.5.7.0\build\Costura.Fody.targets')" />
-  <Import Project="packages\Fody.6.6.0\build\Fody.targets" Condition="Exists('packages\Fody.6.6.0\build\Fody.targets')" />
+  <Import Project="packages\Fody.6.6.4\build\Fody.targets" Condition="Exists('packages\Fody.6.6.4\build\Fody.targets')" />
+  <Import Project="packages\PlgxTool.1.0.3\build\PlgxTool.targets" Condition="Exists('packages\PlgxTool.1.0.3\build\PlgxTool.targets')" />
 </Project>
