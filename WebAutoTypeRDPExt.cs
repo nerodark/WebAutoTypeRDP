@@ -1,5 +1,4 @@
-﻿using ChromeAutomation;
-using HarmonyLib;
+﻿using HarmonyLib;
 using KeePass;
 using KeePass.Forms;
 using KeePass.Plugins;
@@ -8,18 +7,21 @@ using KeePass.Util;
 using KeePass.Util.Spr;
 using KeePassLib;
 using KeePassLib.Utility;
-using Microsoft.CSharp.RuntimeBinder;
 using Microsoft.WindowsAPICodePack.Shell;
-using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Net;
+using System.Net.Http;
+using System.Net.WebSockets;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Web;
 using System.Windows.Forms;
 
@@ -33,7 +35,7 @@ namespace WebAutoTypeRDP
         [System.Diagnostics.CodeAnalysis.SuppressMessage("CodeQuality", "IDE0051:Remove unused private members", Justification = "Harmony Patch")]
         static bool PerformGlobalPrefix(ImageList ilIcons)
         {
-            return !WebAutoTypeRDPExt.PerformAutoType(ilIcons);
+            return !Task.Run(() => WebAutoTypeRDPExt.PerformAutoType(ilIcons)).Result;
         }
     }
 
@@ -70,7 +72,7 @@ namespace WebAutoTypeRDP
         private static readonly string UrlAutoTypeWindowTitlePrefix = "??:URL:";
         private static readonly string CheckPasswordBoxPlaceholder = "{PASSWORDBOX}";
 
-        private static readonly object autoTypeLock = new object();
+        private static readonly SemaphoreSlim autoTypeSemaphore = new SemaphoreSlim(1, 1);
 
         private const string pluginName = "WebAutoTypeRDP";
         private const string setupMenuText = pluginName + " Setup";
@@ -80,29 +82,61 @@ namespace WebAutoTypeRDP
         private static readonly object shell = Activator.CreateInstance(type);
 
         private static readonly List<AppBrowser> appBrowsers = new List<AppBrowser>();
-        private static Dictionary<string, DevToolsPort> appBrowsersConfig = new Dictionary<string, DevToolsPort>()
+        // Browsers are found and setup by their link file name.
+        private static Dictionary<string, AppBrowserConfig> appBrowsersConfig = new Dictionary<string, AppBrowserConfig>()
         {
-            { "Google Chrome", DevToolsPort.GoogleChrome },
-            { "Microsoft Edge", DevToolsPort.MicrosoftEdge }
+            {
+                "Google Chrome",
+                new AppBrowserConfig {
+                    Name = "Google Chrome",
+                    LinkFileName = "Google Chrome",
+                    RemoteDebuggingPort = RemoteDebuggingPort.GoogleChrome
+                }
+            },
+            {
+                "Microsoft Edge",
+                new AppBrowserConfig {
+                    Name = "Microsoft Edge",
+                    LinkFileName = "Microsoft Edge",
+                    RemoteDebuggingPort = RemoteDebuggingPort.MicrosoftEdge
+                }
+            },
+            {
+                "Mozilla Firefox",
+                new AppBrowserConfig {
+                    Name = "Mozilla Firefox",
+                    LinkFileName = "Firefox",
+                    RemoteDebuggingPort = RemoteDebuggingPort.MozillaFirefox
+                }
+            }
         };
 
-        private enum DevToolsPort
+        private enum RemoteDebuggingPort
         {
             GoogleChrome = 9222,
-            MicrosoftEdge = 9223
+            MicrosoftEdge = 9223,
+            MozillaFirefox = 9224
         }
 
         private class AppBrowser
         {
             public string Name { get; set; }
+            public string LinkFileName { get; set; }
             public string ExecutablePath { get; set; }
-            public DevToolsPort DevToolsPort
+            public RemoteDebuggingPort RemoteDebuggingPort
             {
                 get
                 {
-                    return appBrowsersConfig[Name];
+                    return appBrowsersConfig[Name].RemoteDebuggingPort;
                 }
             }
+        }
+
+        private class AppBrowserConfig
+        {
+            public string Name { get; set; }
+            public string LinkFileName { get; set; }
+            public RemoteDebuggingPort RemoteDebuggingPort { get; set; }
         }
 
         private static IPluginHost Host { get; set; }
@@ -194,7 +228,7 @@ namespace WebAutoTypeRDP
 
             return null;
         }
-
+        
         public override bool Initialize(IPluginHost host)
         {
             if (host == null) return false;
@@ -208,11 +242,11 @@ namespace WebAutoTypeRDP
             if (!setupCommandLine.Equals(default(KeyValuePair<string, string>)))
             {
                 Setup();
-                
-                Environment.Exit(0);
+
+                Host.MainWindow.BeginInvoke(new Action(() => { Environment.Exit(0); }));
                 return false;
             }
-
+            
             var harmony = new Harmony(typeof(WebAutoTypeRDPExt).Name);
             harmony.PatchAll();
 
@@ -225,12 +259,16 @@ namespace WebAutoTypeRDP
         {
             var appsFolderId = new Guid("{1e87508d-89c2-42f0-8a7e-645a0f50ca58}");
             var appsFolder = KnownFolderHelper.FromKnownFolderId(appsFolderId);
-
-            foreach (var app in appsFolder.Where(a => a.Properties.System.Link.TargetParsingPath.Value != null && a.Properties.System.Link.TargetParsingPath.Value.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) && appBrowsersConfig.ContainsKey(a.Name)))
+            
+            foreach (var app in appsFolder.Where(
+                   app => app.Properties.System.Link.TargetParsingPath.Value != null
+                && app.Properties.System.Link.TargetParsingPath.Value.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)
+                && appBrowsersConfig.Any(appBrowserConfig => appBrowserConfig.Value.LinkFileName == app.Name.Replace((char)160, ' '))))
             {
                 appBrowsers.Add(new AppBrowser
                 {
-                    Name = app.Name,
+                    Name = app.Name.Replace((char)160, ' '),
+                    LinkFileName = app.Name,
                     ExecutablePath = app.Properties.System.Link.TargetParsingPath.Value
                 });
             }
@@ -242,38 +280,38 @@ namespace WebAutoTypeRDP
 
             foreach (var appBrowser in appBrowsers)
             {
-                SetupBrowserShortcuts(appBrowser.Name, appBrowser.DevToolsPort);
+                SetupBrowserShortcuts(appBrowser.LinkFileName, appBrowser.RemoteDebuggingPort);
             }
         }
 
         private static void TerminateBrowsers()
         {
             var appBrowserExecutables = appBrowsers.Select(a => System.IO.Path.GetFileNameWithoutExtension(a.ExecutablePath)).Distinct();
-
+            
             foreach (var process in appBrowserExecutables.SelectMany(Process.GetProcessesByName))
             {
                 process.Kill();
             }
         }
 
-        private void SetupBrowserShortcuts(string linkFileName, DevToolsPort devToolsPort)
+        private void SetupBrowserShortcuts(string linkFileName, RemoteDebuggingPort devToolsPort)
         {
             var startMenuLinkPath = string.Format(@"C:\ProgramData\Microsoft\Windows\Start Menu\Programs\{0}.lnk", linkFileName);
             var taskBarLinkPath = string.Format(@"{0}\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\{1}.lnk", Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), linkFileName);
 
-            if (System.IO.File.Exists(startMenuLinkPath))
-            {
-                var link = (IWshShortcut)type.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod, null, shell, new object[] { startMenuLinkPath });
-                link.Arguments = Regex.Replace(link.Arguments, @"\s*[^\s]*\-\-remote\-debugging\-port=[^\s]*\s*", " ");
-                link.Arguments = string.Format("--remote-debugging-port=\"{0:D}\" {1}", devToolsPort, link.Arguments.Trim());
-                link.Save();
-            }
+            UpdateLinkArguments(startMenuLinkPath, devToolsPort);
+            UpdateLinkArguments(taskBarLinkPath, devToolsPort);
+        }
 
-            if (System.IO.File.Exists(taskBarLinkPath))
+        private void UpdateLinkArguments(string linkPath, RemoteDebuggingPort devToolsPort)
+        {
+            if (System.IO.File.Exists(linkPath))
             {
-                var link = (IWshShortcut)type.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod, null, shell, new object[] { taskBarLinkPath });
+                var link = (IWshShortcut)type.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod, null, shell, new object[] { linkPath });
                 link.Arguments = Regex.Replace(link.Arguments, @"\s*[^\s]*\-\-remote\-debugging\-port=[^\s]*\s*", " ");
-                link.Arguments = string.Format("--remote-debugging-port=\"{0:D}\" {1}", devToolsPort, link.Arguments.Trim());
+                link.Arguments = Regex.Replace(link.Arguments, @"\s*[^\s]*\-\-remote\-allow\-origins=[^\s]*\s*", " ");
+                link.Arguments = string.Format("--remote-debugging-port=\"{0:D}\" --remote-allow-origins=* {1}", devToolsPort, link.Arguments.Trim());
+                link.Arguments = link.Arguments.Trim();
                 link.Save();
             }
         }
@@ -321,42 +359,42 @@ namespace WebAutoTypeRDP
             }
         }
 
-        public static bool PerformAutoType(ImageList icons)
+        public static async Task<bool> PerformAutoType(ImageList icons)
         {
-            lock (autoTypeLock)
+            await autoTypeSemaphore.WaitAsync();
+
+            try
             {
-                try
+                var windowHandle = GetForegroundWindow();
+
+                if (windowHandle == IntPtr.Zero) return false;
+
+                var activeProcessFileName = GetActiveProcessId(windowHandle);
+                var executablePath = GetExecutablePath(activeProcessFileName);
+
+                if (executablePath == null) return false;
+
+                var appBrowser = appBrowsers.SingleOrDefault(a => a.ExecutablePath == executablePath);
+
+                if (appBrowser == null)
                 {
-                    var windowHandle = GetForegroundWindow();
-
-                    if (windowHandle == IntPtr.Zero) return false;
-
-                    var activeProcessFileName = GetActiveProcessId(windowHandle);
-                    var executablePath = GetExecutablePath(activeProcessFileName);
-
-                    if (executablePath == null) return false;
-
-                    var appBrowser = appBrowsers.SingleOrDefault(a => a.ExecutablePath == executablePath);
-
-                    if (appBrowser == null)
-                    {
-                        MessageBox.Show($"The active browser is not supported:\n\n{executablePath}", pluginName, MessageBoxButtons.OK, MessageBoxIcon.Error);
-                        return false;
-                    }
-
-                    var chrome = new Chrome(string.Format("http://127.0.0.1:{0:D}", appBrowser.DevToolsPort));
-                    IEnumerable<RemoteSessionsResponse> sessions = chrome.GetAvailableSessions();
-                    sessions = sessions.Where(s => s.type == "page");
-
-                    // Conditions order matters
-                    if (   TryPerformAutoType(icons, chrome, sessions, IsBrowserUrlFocused, true)
-                        || TryPerformAutoType(icons, chrome, sessions, IsBrowserUrlVisible, false))
-                    {
-                        // Return "true" to harmony patch to NOT execute KeePass's method.
-                        return true;
-                    }
+                    MessageBox.Show(string.Format("The active browser is not supported:\n\n{0}", executablePath), pluginName, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    return false;
                 }
-                catch (WebException)
+
+                var debuggers = await GetDebuggers(appBrowser.RemoteDebuggingPort);
+
+                // Conditions order matters
+                if (   await TryPerformAutoType(icons, debuggers, IsBrowserUrlFocused, true)
+                    || await TryPerformAutoType(icons, debuggers, IsBrowserUrlVisible, false))
+                {
+                    // Return "true" to harmony patch to NOT execute KeePass's method.
+                    return true;
+                }
+            }
+            catch (Exception ex)
+            {
+                if (ex is WebException)
                 {
                     var result = MessageBox.Show("The active browser doesn't have a remote debugging port enabled.\n\nEither you didn't execute the plugin setup, the browser wasn't executed through a shortcut or another application/service started browser instances in the background that interfere with the plugin.\n\nYou can investigate based on the previous causes.\n\nDo you want to terminate any running browser instance?", pluginName, MessageBoxButtons.OKCancel, MessageBoxIcon.Error);
 
@@ -365,33 +403,35 @@ namespace WebAutoTypeRDP
                         TerminateBrowsers();
                     }
                 }
-                catch (RuntimeBinderException)
+                else if (ex is JsonException || ex is KeyNotFoundException)
                 {
-                    // The json response structure from CDP has changed. The code has to be updated.
-                    MessageBox.Show("The active browser's DevTools protocol has changed.\n\nPlease contact the plugin's author.", pluginName, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    // The json response structure from the remote debugging protocol has changed. The code has to be updated.
+                    MessageBox.Show("The active browser's remote debugging protocol has changed.\n\nPlease contact the plugin's author.", pluginName, MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
-                catch (Exception)
+                else
                 {
                     throw;
                 }
-
-                // Return "false" to harmony patch to execute KeePass's method normally.
-                return false;
             }
+            finally
+            {
+                autoTypeSemaphore.Release();
+            }
+
+            // Return "false" to harmony patch to execute KeePass's method normally.
+            return false;
         }
 
-        private static bool TryPerformAutoType(ImageList icons, Chrome chrome, IEnumerable<RemoteSessionsResponse> sessions, Func<Chrome, bool> browserUrlValidator, bool canCheckPasswordBox)
+        private static async Task<bool> TryPerformAutoType(ImageList icons, IEnumerable<Debugger> debuggers, Func<Debugger, Task<bool>> browserUrlValidator, bool canCheckPasswordBox)
         {
             var windowHandle = GetForegroundWindow();
             var activeWindowTitle = GetActiveWindowTitle(windowHandle);
 
-            foreach (var session in sessions)
+            foreach (var debugger in debuggers)
             {
-                chrome.SetActiveSession(session.webSocketDebuggerUrl);
-
-                if (activeWindowTitle.Contains(HttpUtility.HtmlDecode(session.title)) && browserUrlValidator(chrome))
+                if (activeWindowTitle.Contains(HttpUtility.HtmlDecode(debugger.title)) && await browserUrlValidator(debugger))
                 {
-                    var entries = FindMatchingEntries(session.url);
+                    var entries = FindMatchingEntries(debugger.url);
 
                     if (entries.Count() > 1 || Program.Config.Integration.AutoTypeAlwaysShowSelDialog)
                     {
@@ -410,7 +450,7 @@ namespace WebAutoTypeRDP
                             {
                                 var entry = autoTypeCtxForm.SelectedCtx.Entry;
 
-                                PerformAutoType(chrome, entry, canCheckPasswordBox);
+                                await PerformAutoType(debugger, entry, canCheckPasswordBox);
                             }
 
                             UIUtil.DestroyForm(autoTypeCtxForm);
@@ -420,7 +460,7 @@ namespace WebAutoTypeRDP
                     {
                         var entry = entries.Single();
 
-                        PerformAutoType(chrome, entry, canCheckPasswordBox);
+                        await PerformAutoType(debugger, entry, canCheckPasswordBox);
                     }
 
                     if (entries.Any())
@@ -434,7 +474,7 @@ namespace WebAutoTypeRDP
         }
 
         // Inspired by the OnAutoTypeFilterCompilePre event from the CheckPasswordBox plugin.
-        private static void PerformAutoType(Chrome chrome, PwEntry entry, bool canCheckPasswordBox)
+        private static async Task PerformAutoType(Debugger debugger, PwEntry entry, bool canCheckPasswordBox)
         {
             var autoTypeSequence = entry.GetAutoTypeSequence();
             var index = autoTypeSequence.IndexOf(CheckPasswordBoxPlaceholder, StringComparison.InvariantCultureIgnoreCase);
@@ -444,7 +484,7 @@ namespace WebAutoTypeRDP
 
             if (canCheckPasswordBox && index > -1)
             {
-                if (!IsPasswordBoxFocused(chrome))
+                if (!await IsPasswordBoxFocused(debugger))
                 {
                     sequence = autoTypeSequence.Substring(0, index);
                     remainder = autoTypeSequence.Substring(index + CheckPasswordBoxPlaceholder.Length);
@@ -470,64 +510,122 @@ namespace WebAutoTypeRDP
             if (remainder != null)
             {
                 // Trigger a second auto-type automatically after this one finishes, if it's in a password box now.
-                if (IsPasswordBoxFocused(chrome))
+                if (await IsPasswordBoxFocused(debugger))
                 {
                     AutoType.PerformIntoCurrentWindow(entry, Host.Database, remainder);
                 }
             }
         }
 
-        private static bool IsBrowserUrlFocused(Chrome chrome)
+        private static async Task<IEnumerable<Debugger>> GetDebuggers(RemoteDebuggingPort devToolsPort)
         {
-            var json = chrome.Eval("document.hasFocus()");
-
-            dynamic result = JsonConvert.DeserializeObject(json);
-            result = result.result.result;
-
-            if (result.type == "boolean")
+            using (HttpClient client = new HttpClient())
             {
-                return result.value == "true";
+                var response = await client.GetAsync(string.Format("http://127.0.0.1:{0:D}/json", devToolsPort));
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var debuggers = JsonSerializer.Deserialize<IEnumerable<Debugger>>(await response.Content.ReadAsStringAsync());
+                    debuggers = debuggers.Where(x => !string.IsNullOrEmpty(x.webSocketDebuggerUrl) && x.type == "page");
+
+                    return debuggers;
+                }
+            }
+
+            return Enumerable.Empty<Debugger>();
+        }
+
+        public class Debugger
+        {
+            public string title { get; set; }
+            public string type { get; set; }
+            public string url { get; set; }
+            public string webSocketDebuggerUrl { get; set; }
+        }
+
+        private static async Task<string> Evaluate(Debugger debugger, string expression)
+        {
+            var message = new StringBuilder();
+            expression = string.Format(@"{{""method"":""Runtime.evaluate"",""params"":{{""expression"":""{0}""}},""id"":1}}", expression);
+            
+            using (var ws = new ClientWebSocket())
+            {
+                var buffer = new byte[1024];
+
+                await ws.ConnectAsync(new Uri(debugger.webSocketDebuggerUrl.Replace("localhost", "127.0.0.1")), CancellationToken.None);
+                await ws.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes(expression)), WebSocketMessageType.Text, true, CancellationToken.None);
+
+                if (ws.State == WebSocketState.Open)
+                {
+                    WebSocketReceiveResult result;
+
+                    do
+                    {
+                        result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+                        message.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
+                    } while (!result.EndOfMessage);
+
+                    await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, null, CancellationToken.None);
+                }
+            }
+
+            return message.ToString();
+        }
+
+        private static async Task<bool> IsBrowserUrlFocused(Debugger debugger)
+        {
+            var json = await Evaluate(debugger, "document.hasFocus()");
+
+            var result = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json);
+            result = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(result["result"]);
+            result = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(result["result"]);
+
+            if (result["type"].GetString() == "boolean")
+            {
+                return result["value"].GetBoolean();
             }
 
             return false;
         }
 
-        private static bool IsBrowserUrlVisible(Chrome chrome)
+        private static async Task<bool> IsBrowserUrlVisible(Debugger debugger)
         {
-            var json = chrome.Eval("document.visibilityState");
+            var json = await Evaluate(debugger, "document.visibilityState");
 
-            dynamic result = JsonConvert.DeserializeObject(json);
-            result = result.result.result;
+            var result = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json);
+            result = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(result["result"]);
+            result = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(result["result"]);
 
-            if (result.type == "string")
+            if (result["type"].GetString() == "boolean")
             {
-                return result.value == "visible";
+                return result["value"].GetString() == "visible";
             }
 
             return false;
         }
 
-        private static bool IsPasswordBoxFocused(Chrome chrome)
+        private static async Task<bool> IsPasswordBoxFocused(Debugger debugger)
         {
-            RegisterGetActiveElementFunction(chrome);
+            await RegisterGetActiveElementFunction(debugger);
 
-            var json = chrome.Eval("kpGetActiveElement().type");
+            var json = await Evaluate(debugger, "kpGetActiveElement().type");
 
-            dynamic result = JsonConvert.DeserializeObject(json);
-            result = result.result.result;
+            var result = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(json);
+            result = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(result["result"]);
+            result = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(result["result"]);
 
-            if (result.type == "string")
+            if (result["type"].GetString() == "string")
             {
-                return result.value == "password";
+                return result["value"].GetString() == "password";
             }
 
             return false;
         }
 
         // Create a JavaScript function that returns the active element of a page, regardless of iframe window or shadow root.
-        private static void RegisterGetActiveElementFunction(Chrome chrome)
+        private static async Task RegisterGetActiveElementFunction(Debugger debugger)
         {
-            chrome.Eval(@"
+            await Evaluate(debugger, @"
 				function kpGetActiveElement(element = document.activeElement)
 				{
 					const contentDocument = element.contentDocument;
